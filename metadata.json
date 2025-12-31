@@ -1,0 +1,7 @@
+{
+  "name": "Gusrepart AI Expert",
+  "description": "A sophisticated AI-driven expert system for electronic repair, diagnostic guidance, and PCB analysis using the latest Gemini models.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
