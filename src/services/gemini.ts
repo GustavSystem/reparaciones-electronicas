@@ -83,7 +83,7 @@ const smartGenerate = async (
         return await executeCall(targetModel);
     } catch (error: any) {
         console.warn(`Error usando modelo ${targetModel}:`, error);
-        const SAFE_MODEL = 'gemini-2.0-flash-exp'; 
+        const SAFE_MODEL = 'gemini-3-flash-preview'; 
         if (targetModel !== SAFE_MODEL) {
             return await executeCall(SAFE_MODEL);
         }

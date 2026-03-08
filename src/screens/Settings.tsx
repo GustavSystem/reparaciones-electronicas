@@ -13,9 +13,7 @@ const Settings: React.FC = () => {
     // Si el modelo guardado no está en la lista estándar, activar modo manual automáticamente
     const standardModels = [
         'gemini-3-flash-preview', 
-        'gemini-3.1-pro-preview', 
-        'gemini-2.0-flash-exp', 
-        'gemini-2.0-flash-thinking-exp-01-21'
+        'gemini-3.1-pro-preview'
     ];
     if (settings.geminiModel && !standardModels.includes(settings.geminiModel)) {
         setIsManualModel(true);
@@ -79,10 +77,6 @@ const Settings: React.FC = () => {
                             <optgroup label="Serie 3 (Experimental - Alta Inteligencia)">
                                 <option value="gemini-3-flash-preview">Gemini 3.0 Flash Preview (Recomendado)</option>
                                 <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Pensamiento Profundo)</option>
-                            </optgroup>
-                            <optgroup label="Serie 2.0 (Equilibrado)">
-                                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Experimental</option>
-                                <option value="gemini-2.0-flash-thinking-exp-01-21">Gemini 2.0 Flash Thinking</option>
                             </optgroup>
                         </select>
                     ) : (
