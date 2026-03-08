@@ -12,6 +12,7 @@ const KnowledgeBase: React.FC = () => {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [processStatus, setProcessStatus] = useState(""); // Nuevo estado para feedback texto
   
   // Estado para eliminación
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -58,7 +59,10 @@ const KnowledgeBase: React.FC = () => {
             return prev;
         });
         if (!silent) setLoading(false);
-        if (activeTasksCount === 0) setProcessing(false);
+        if (activeTasksCount === 0) {
+            setProcessing(false);
+            setProcessStatus("");
+        }
     }
   };
 
@@ -66,6 +70,9 @@ const KnowledgeBase: React.FC = () => {
     if (inputType !== 'pdf' && !inputContent.trim()) return;
     
     setProcessing(true);
+    if(inputType === 'url') setProcessStatus("Navegando y analizando URL con Google Search...");
+    else setProcessStatus("Analizando y destilando nota...");
+    
     activeTasksCount++;
     
     const contentToProcess = inputContent;
@@ -77,14 +84,14 @@ const KnowledgeBase: React.FC = () => {
         try {
             const distilled = await distillKnowledge(
                 contentToProcess, 
-                typeToProcess === 'url' ? 'Link Externo' : 'Nota del Técnico'
+                typeToProcess === 'url' ? contentToProcess : 'Nota del Técnico'
             );
             
             const newEntry: KnowledgeEntry = {
                 id: crypto.randomUUID(),
-                title: distilled.title || "Procesando...",
+                title: distilled.title || (typeToProcess === 'url' ? "Resumen Web" : "Nota Rápida"),
                 tags: distilled.tags || [],
-                content: distilled.content || "Esperando datos...",
+                content: distilled.content || "Sin contenido generado.",
                 source: typeToProcess === 'url' ? contentToProcess : 'Nota Manual',
                 timestamp: Date.now()
             };
@@ -92,10 +99,14 @@ const KnowledgeBase: React.FC = () => {
             await addKnowledgeEntry(newEntry);
         } catch (e) {
             console.error("Error en background task:", e);
+            alert("Hubo un error analizando el contenido. Verifica la URL o intenta de nuevo.");
         } finally {
             activeTasksCount--;
             if (isMounted.current) {
-                if (activeTasksCount === 0) setProcessing(false);
+                if (activeTasksCount === 0) {
+                    setProcessing(false);
+                    setProcessStatus("");
+                }
                 loadKnowledge(true);
             }
         }
@@ -112,6 +123,7 @@ const KnowledgeBase: React.FC = () => {
       }
 
       setProcessing(true);
+      setProcessStatus("Leyendo PDF y extrayendo datos técnicos...");
       activeTasksCount++;
 
       const reader = new FileReader();
@@ -136,7 +148,10 @@ const KnowledgeBase: React.FC = () => {
           } finally {
               activeTasksCount--;
               if (isMounted.current) {
-                  if (activeTasksCount === 0) setProcessing(false);
+                  if (activeTasksCount === 0) {
+                      setProcessing(false);
+                      setProcessStatus("");
+                  }
                   loadKnowledge(true);
               }
               if (fileInputRef.current) fileInputRef.current.value = "";
@@ -152,10 +167,8 @@ const KnowledgeBase: React.FC = () => {
 
   const confirmDelete = async () => {
     if (!deleteId) return;
-    
     const idToDel = deleteId;
     setDeleteId(null); 
-    
     setEntries(prev => prev.filter(entry => entry.id !== idToDel));
 
     try {
@@ -197,7 +210,7 @@ const KnowledgeBase: React.FC = () => {
              <span className="material-symbols-outlined text-purple-400 text-4xl">school</span>
              Entrenamiento de IA
           </h1>
-          <p className="text-text-secondary text-lg">Alimenta la base de datos con manuales, esquemas y tus propias notas.</p>
+          <p className="text-text-secondary text-lg">Alimenta la base de datos con manuales, enlaces de video (YouTube) y tus propias notas.</p>
         </div>
 
         {/* INPUT AREA */}
@@ -244,28 +257,32 @@ const KnowledgeBase: React.FC = () => {
                   <input 
                     value={inputContent}
                     onChange={e => setInputContent(e.target.value)}
-                    placeholder={inputType === 'url' ? "Ej: youtube.com/watch?v=..." : "Ej: Tip: Corto en línea principal..."}
+                    placeholder={inputType === 'url' ? "Pega aquí el enlace (YouTube, Foro, Web)..." : "Escribe tu consejo técnico o solución..."}
                     className="flex-1 bg-black/40 border border-border-dark rounded-xl px-4 py-3 text-white focus:border-purple-500 outline-none transition-colors"
+                    onKeyDown={e => e.key === 'Enter' && handleLearn()}
                   />
                   <button 
                     onClick={handleLearn}
-                    disabled={processing && inputContent === ""} 
+                    disabled={processing || inputContent === ""} 
                     className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
                     {processing ? <span className="material-symbols-outlined animate-spin">sync</span> : <span className="material-symbols-outlined">auto_awesome</span>}
-                    <span>{processing ? 'Encolar' : 'Procesar'}</span>
+                    <span>{processing ? 'Procesando' : 'Analizar'}</span>
                   </button>
                </div>
            )}
            
-           <div className="flex justify-between items-center mt-3">
-                <p className="text-xs text-text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-sm">info</span>
-                    Todo lo que subas aquí será usado por el Asistente en futuras reparaciones.
-                </p>
+           <div className="flex justify-between items-center mt-3 h-6">
+                {!processing && (
+                    <p className="text-xs text-text-secondary flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">info</span>
+                        La IA navegará los enlaces o leerá los PDFs para crear fichas automáticamente.
+                    </p>
+                )}
                 {processing && (
-                    <p className="text-xs text-purple-400 font-bold animate-pulse">
-                        Leyendo y analizando documento...
+                    <p className="text-xs text-purple-400 font-bold animate-pulse flex items-center gap-2">
+                         <span className="material-symbols-outlined text-sm animate-spin">cyclone</span>
+                         {processStatus || "Trabajando..."}
                     </p>
                 )}
            </div>
@@ -294,7 +311,7 @@ const KnowledgeBase: React.FC = () => {
            ) : (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                {entries.map(entry => (
-                 <div key={entry.id} className={`bg-surface-dark border ${editingId === entry.id ? 'border-primary ring-1 ring-primary' : 'border-border-dark'} rounded-xl p-5 hover:border-purple-500/50 transition-all group relative animate-in fade-in slide-in-from-bottom-2`}>
+                 <div key={entry.id} className={`bg-surface-dark border ${editingId === entry.id ? 'border-primary ring-1 ring-primary' : 'border-border-dark'} rounded-xl p-5 hover:border-purple-500/50 transition-all groupWZ relative animate-in fade-in slide-in-from-bottom-2`}>
                     
                     {editingId === entry.id ? (
                         <div className="flex flex-col gap-3">
@@ -323,18 +340,17 @@ const KnowledgeBase: React.FC = () => {
                         </div>
                     ) : (
                         <>
-                            {/* BOTONES DE ACCIÓN FLOTANTES CON Z-INDEX ALTO */}
                             <div className="absolute top-3 right-3 flex gap-1 z-20">
                                 <button 
                                 onClick={() => startEditing(entry)}
-                                className="p-1.5 text-text-secondary bg-[#1a2332] hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-white/10"
+                                className="p-1.5 text-text-secondary bg-[#1a2332] hover:text-white hover:bg-white/10 rounded-lg transition-colors shadow-sm border border-transparent hover:border-white/10"
                                 title="Corregir o Editar"
                                 >
                                 <span className="material-symbols-outlined text-lg">edit</span>
                                 </button>
                                 <button 
                                 onClick={(e) => requestDelete(e, entry.id)}
-                                className="p-1.5 text-text-secondary bg-[#1a2332] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-red-500/20"
+                                className="p-1.5 text-text-secondary bg-[#1a2332] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shadow-sm border border-transparent hover:border-red-500/20"
                                 title="Eliminar Definitivamente"
                                 >
                                 <span className="material-symbols-outlined text-lg">delete</span>

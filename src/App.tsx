@@ -14,6 +14,7 @@ import ComponentDetails from './screens/ComponentDetails';
 import KnowledgeBase from './screens/KnowledgeBase';
 import Settings from './screens/Settings';
 import ChatBot from './components/ChatBot';
+import LiveAssistant from './components/LiveAssistant';
 import { PCBAnalysisResult, MeasurementPoint, DiagnosticTurn } from './types';
 import { getSessionData, saveSessionData, clearSessionStorage, saveRepairToHistory, initializeDatabase } from './services/storage';
 
@@ -24,13 +25,18 @@ const AppContent: React.FC = () => {
   const [isClearing, setIsClearing] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   
-  // Modals
+  // Modals & Floating UI
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showNewRepairModal, setShowNewRepairModal] = useState(false);
+  const [showLiveAssistant, setShowLiveAssistant] = useState(false);
   
   // Estados de sesión
   const [pcbImages, setPcbImages] = useState<string[]>([]);
   const [pcbResult, setPcbResult] = useState<PCBAnalysisResult | null>(null);
+  
+  // LIFTED STATE: Reception Data (Persistencia de datos de entrada)
+  const [receptionData, setReceptionData] = useState({ model: '', serial: '', symptoms: '' }); 
+  
   const [schematicInfo, setSchematicInfo] = useState<{summary: string, sources: string} | null>(null);
   const [functionalAI, setFunctionalAI] = useState<string>("");
   const [measurements, setMeasurements] = useState<MeasurementPoint[]>([]);
@@ -51,7 +57,8 @@ const AppContent: React.FC = () => {
           getSessionData('functionalAI'),
           getSessionData('measurements'),
           getSessionData('diagHistory'),
-          getSessionData('currentRepairTimestamp')
+          getSessionData('currentRepairTimestamp'),
+          getSessionData('receptionData') // Cargar datos de recepción guardados
         ]);
 
         const getVal = (idx: number) => results[idx].status === 'fulfilled' ? (results[idx] as PromiseFulfilledResult<any>).value : null;
@@ -63,6 +70,7 @@ const AppContent: React.FC = () => {
         const meas = getVal(4);
         const diag = getVal(5);
         const ts = getVal(6);
+        const recData = getVal(7);
 
         if (imgs) setPcbImages(imgs);
         if (res) setPcbResult(res);
@@ -71,6 +79,7 @@ const AppContent: React.FC = () => {
         if (meas) setMeasurements(meas);
         if (diag) setDiagHistory(diag);
         if (ts) setCurrentRepairTimestamp(ts);
+        if (recData) setReceptionData(recData);
         
       } catch (e) { 
           console.error("Critical Load Error", e); 
@@ -85,7 +94,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (isLoaded && !isClearing) {
       const timer = setTimeout(() => {
-        if (pcbImages.length > 0 || pcbResult || diagHistory.length > 0) {
+        if (pcbImages.length > 0 || pcbResult || diagHistory.length > 0 || receptionData.model) {
             saveSessionData('pcbImages', pcbImages);
             saveSessionData('pcbResult', pcbResult);
             saveSessionData('schematicInfo', schematicInfo);
@@ -93,11 +102,12 @@ const AppContent: React.FC = () => {
             saveSessionData('measurements', measurements);
             saveSessionData('diagHistory', diagHistory);
             saveSessionData('currentRepairTimestamp', currentRepairTimestamp);
+            saveSessionData('receptionData', receptionData);
         }
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [pcbImages, pcbResult, schematicInfo, functionalAI, measurements, diagHistory, currentRepairTimestamp, isLoaded, isClearing]);
+  }, [pcbImages, pcbResult, schematicInfo, functionalAI, measurements, diagHistory, currentRepairTimestamp, receptionData, isLoaded, isClearing]);
 
   const handleNewRepairConfirm = async () => {
     setIsClearing(true); 
@@ -112,9 +122,11 @@ const AppContent: React.FC = () => {
     setMeasurements([]);
     setDiagHistory([]);
     setCurrentRepairTimestamp(null);
+    setReceptionData({ model: '', serial: '', symptoms: '' });
     setTempModel({ manufacturer: '', model: '', boardNumber: '' });
 
     setShowNewRepairModal(false);
+    // Redirigir DIRECTAMENTE al analizador, saltando safety
     navigate('/pcb-id');
     
     setTimeout(() => {
@@ -126,7 +138,14 @@ const AppContent: React.FC = () => {
     setIsSaving(true);
     try {
       const ts = currentRepairTimestamp || Date.now();
-      const finalRes = metadata ? { ...pcbResult, ...metadata } : pcbResult;
+      
+      // Combinar datos manuales con detectados para el registro final
+      const finalRes = { 
+          ...(pcbResult || {}), 
+          ...(metadata || {}),
+          model: metadata?.model || receptionData.model || pcbResult?.model,
+          boardNumber: metadata?.boardNumber || receptionData.serial || pcbResult?.boardNumber
+      };
       
       const record = {
         timestamp: ts,
@@ -135,7 +154,8 @@ const AppContent: React.FC = () => {
         schematicInfo,
         functionalAI,
         measurements, 
-        diagHistory
+        diagHistory,
+        receptionData // Guardar explícitamente
       };
       
       await saveRepairToHistory(record);
@@ -155,13 +175,13 @@ const AppContent: React.FC = () => {
   };
 
   const handleGlobalSave = () => {
-    if (currentRepairTimestamp && pcbResult?.model) {
+    if (currentRepairTimestamp && (pcbResult?.model || receptionData.model)) {
       executeSave();
     } else {
       setTempModel({ 
         manufacturer: pcbResult?.manufacturer || '', 
-        model: pcbResult?.model || '', 
-        boardNumber: pcbResult?.boardNumber || '' 
+        model: receptionData.model || pcbResult?.model || '', 
+        boardNumber: receptionData.serial || pcbResult?.boardNumber || '' 
       });
       setShowSaveModal(true);
     }
@@ -188,6 +208,18 @@ const AppContent: React.FC = () => {
     setDiagHistory(repair.diagHistory || []);   
     setCurrentRepairTimestamp(repair.timestamp || null);
     
+    // Cargar datos de recepción
+    if (repair.receptionData) {
+        setReceptionData(repair.receptionData);
+    } else if (repair.pcbResult) {
+        // Fallback para registros antiguos
+        setReceptionData({
+            model: repair.pcbResult.model || '',
+            serial: repair.pcbResult.boardNumber || '',
+            symptoms: ''
+        });
+    }
+    
     setTimeout(() => setIsClearing(false), 500);
   };
 
@@ -197,18 +229,33 @@ const AppContent: React.FC = () => {
     <div className="flex h-screen w-full bg-background-dark text-white overflow-hidden font-display relative">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 relative">
-        <Header onSave={handleGlobalSave} isSaving={isSaving} isSuccess={saveSuccess} />
+        <Header 
+            onSave={handleGlobalSave} 
+            isSaving={isSaving} 
+            isSuccess={saveSuccess}
+            onToggleLive={() => setShowLiveAssistant(!showLiveAssistant)}
+            isLiveActive={showLiveAssistant}
+        />
         <main className="flex-1 overflow-hidden relative">
           <Routes>
             <Route path="/" element={<Dashboard onLoadRepair={(r) => { loadRepair(r); navigate('/pcb-id'); }} onNewRepair={() => setShowNewRepairModal(true)} />} />
-            <Route path="/pcb-id" element={<PCBIdentification persistedImages={pcbImages} persistedResult={pcbResult} onUpdate={(imgs, res, schem, func) => { 
-                if (!isClearing) {
-                  setPcbImages([...imgs]);
-                  if (res !== undefined) setPcbResult(res);
-                  if (schem !== undefined) setSchematicInfo(schem);
-                  if (func !== undefined) setFunctionalAI(func);
-                }
-            }} />} />
+            {/* RUTA DE SAFETY ELIMINADA */}
+            <Route path="/pcb-id" element={
+                <PCBIdentification 
+                    persistedImages={pcbImages} 
+                    persistedResult={pcbResult} 
+                    persistedReceptionData={receptionData}
+                    onUpdate={(imgs, res, schem, func, recData) => { 
+                        if (!isClearing) {
+                          if (imgs) setPcbImages([...imgs]);
+                          if (res !== undefined) setPcbResult(res);
+                          if (schem !== undefined) setSchematicInfo(schem);
+                          if (func !== undefined) setFunctionalAI(func);
+                          if (recData !== undefined) setReceptionData(recData);
+                        }
+                    }} 
+                />
+            } />
             <Route path="/boardview" element={<BoardviewSchematics pcbResult={pcbResult} schematicInfo={schematicInfo} functionalAI={functionalAI} />} />
             <Route 
                 path="/measure" 
@@ -230,7 +277,11 @@ const AppContent: React.FC = () => {
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
-        <ChatBot />
+        <ChatBot 
+          onSaveRepair={handleGlobalSave}
+          onNewRepair={() => setShowNewRepairModal(true)}
+        />
+        {showLiveAssistant && <LiveAssistant onClose={() => setShowLiveAssistant(false)} />}
       </div>
 
       <ConfirmDialog 

@@ -26,20 +26,19 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
   }, [persistedPoints]);
 
   const initPlan = async () => {
-    if (pcbResult && functionalAI && points.length === 0) {
+    if (pcbResult && points.length === 0) {
       setIsLoading(true);
       setError(null);
       try {
-        // AHORA PASAMOS LA IMAGEN PARA QUE LA IA DETECTE COORDENADAS
-        const plan = await generateMeasurementPlan(pcbResult, functionalAI, pcbImages[0]);
+        // Generar plan basado en el modelo y contexto (Esquemas)
+        const plan = await generateMeasurementPlan(pcbResult, functionalAI);
         const formatted: MeasurementPoint[] = plan.map(p => ({ ...p, status: 'pending' }));
         setPoints(formatted);
         onUpdate(formatted);
       } catch (e) {
         console.error("Failed to generate plan", e);
-        // Mostrar mensaje completo del error
         const msg = e instanceof Error ? e.message : "Error desconocido";
-        setError(`Error de IA: ${msg}. Si usas Ollama, verifica que tengas los modelos 'llama3' y 'llava' descargados.`);
+        setError(`Error de IA: ${msg}. Verifica tu API Key.`);
       } finally {
         setIsLoading(false);
       }
@@ -48,20 +47,19 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
 
   useEffect(() => {
     initPlan();
-  }, [pcbResult, functionalAI]);
+  }, [pcbResult]);
 
   const handleValueChange = (val: string) => {
     const newPoints = [...points];
     newPoints[activeIdx].measuredValue = val;
 
-    const expected = parseFloat(newPoints[activeIdx].expectedValue);
+    // Validación simple de valor esperado
     const measured = parseFloat(val);
-
+    // Lógica básica: si hay valor, marcar ok provisionalmente (el veredicto final lo da la IA)
     if (!isNaN(measured)) {
-      if (measured < 0.01 && expected > 0.1) newPoints[activeIdx].status = 'fail';
-      else newPoints[activeIdx].status = 'ok';
+       newPoints[activeIdx].status = 'ok';
     } else {
-      newPoints[activeIdx].status = 'pending';
+       newPoints[activeIdx].status = 'pending';
     }
 
     setPoints(newPoints);
@@ -70,12 +68,10 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
 
   const generateVerdict = async () => {
     setIsVerdictLoading(true);
-    // CRÍTICO: Asegurar que el padre tiene la última versión de los puntos antes de navegar fuera o guardar
     onUpdate(points);
 
     try {
       const res = await getFinalVerdict(pcbResult, points);
-      // En lugar de mostrarlo localmente, lo enviamos al chat de diagnóstico
       onVerdictGenerated(res);
     } catch (e) {
       alert("Error al generar veredicto");
@@ -83,8 +79,6 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
       setIsVerdictLoading(false);
     }
   };
-
-  const activePoint = points[activeIdx];
 
   if (!pcbResult) return (
     <div className="flex-1 flex flex-col items-center justify-center p-10 text-center opacity-30">
@@ -100,41 +94,9 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
         <div className="w-full h-full relative overflow-hidden flex items-center justify-center">
           {pcbImages.length > 0 ? (
             <div className="relative w-full h-full">
-              <img src={pcbImages[0]} alt="PCB View" className="w-full h-full object-contain opacity-70" />
-              <div className="absolute inset-0 grid-bg opacity-20 pointer-events-none"></div>
-
-              {/* CAPA DE REALIDAD AUMENTADA / VISUALIZACIÓN */}
-              {activePoint && (
-                <div className="absolute inset-0 pointer-events-none">
-                  {/* Si tenemos coordenadas de la IA (Bounding Box) */}
-                  {activePoint.coordinates && activePoint.coordinates.length === 4 ? (
-                    <div
-                      className="absolute border-2 border-primary bg-primary/20 animate-pulse shadow-[0_0_30px_#135bec] rounded"
-                      style={{
-                        top: `${activePoint.coordinates[0]}%`,    // ymin
-                        left: `${activePoint.coordinates[1]}%`,   // xmin
-                        height: `${activePoint.coordinates[2] - activePoint.coordinates[0]}%`, // ymax - ymin
-                        width: `${activePoint.coordinates[3] - activePoint.coordinates[1]}%`   // xmax - xmin
-                      }}
-                    >
-                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-primary px-3 py-1 rounded text-[12px] font-bold whitespace-nowrap uppercase tracking-wider text-white shadow-lg">
-                        Mide Aquí: {activePoint.component}
-                      </div>
-                    </div>
-                  ) : (
-                    /* Fallback: Si no hay coordenadas, mostrar un marcador central genérico */
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="relative">
-                        <div className="size-24 border-2 border-dashed border-primary rounded-full animate-spin opacity-50"></div>
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-4 bg-primary rounded-full shadow-[0_0_20px_#135bec] animate-ping"></div>
-                        <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-black/80 border border-primary px-3 py-1 rounded text-[10px] font-bold whitespace-nowrap text-primary uppercase tracking-wider">
-                          {activePoint.component} (Ubicación Aprox.)
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Imagen limpia sin recuadros superpuestos */}
+              <img src={pcbImages[0]} alt="PCB View" className="w-full h-full object-contain" />
+              <div className="absolute inset-0 grid-bg opacity-10 pointer-events-none"></div>
             </div>
           ) : (
             <div className="text-text-secondary italic">Imagen de referencia no disponible</div>
@@ -146,14 +108,15 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
         <div className="p-6 border-b border-[#232f48] bg-surface-dark/50">
           <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-primary">Diagnóstico Sistemático</span>
           <h2 className="text-xl font-bold text-white mt-1">Guía de Medición</h2>
+          <p className="text-xs text-text-secondary mt-1">Sigue los pasos basados en el esquema/lógica.</p>
         </div>
 
         <div className="flex-1 p-6 space-y-6">
           {isLoading ? (
             <div className="space-y-4 animate-pulse">
               <div className="p-4 bg-border-dark/30 rounded-xl text-center text-sm text-primary font-bold">
-                <span className="material-symbols-outlined animate-spin text-2xl block mb-2">view_in_ar</span>
-                Analizando PCB e identificando puntos de medición...
+                <span className="material-symbols-outlined animate-spin text-2xl block mb-2">menu_book</span>
+                Consultando esquemas y generando puntos...
               </div>
               {[1, 2, 3].map(i => <div key={i} className="h-24 bg-border-dark rounded-xl"></div>)}
             </div>
@@ -173,7 +136,7 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
             <div className="space-y-4">
               {points.map((p, idx) => (
                 <div
-                  key={p.id}
+                  key={p.id || idx}
                   onClick={() => setActiveIdx(idx)}
                   className={`p-4 rounded-xl border transition-all cursor-pointer ${activeIdx === idx ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(19,91,236,0.1)]' : 'bg-surface-dark border-border-dark hover:border-white/10'}`}
                 >
@@ -187,7 +150,7 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
                         <p className="text-[10px] text-text-secondary mt-0.5">{p.testPoint} | Modo {p.mode}</p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-primary font-bold">{p.expectedValue} Exp.</span>
+                    <span className="text-[10px] font-mono text-primary font-bold">{p.expectedValue}</span>
                   </div>
 
                   {activeIdx === idx && (
@@ -197,11 +160,10 @@ const GuidedMeasurement: React.FC<GuidedMeasurementProps> = ({ pcbImages, pcbRes
                         <input
                           value={p.measuredValue || ''}
                           onChange={(e) => handleValueChange(e.target.value)}
-                          placeholder="0.000"
+                          placeholder="Valor medido..."
                           autoFocus
                           className={`w-full bg-black/40 border ${p.status === 'fail' ? 'border-red-500/50' : 'border-border-dark'} rounded-lg p-3 text-xl font-mono font-bold text-white focus:ring-1 focus:ring-primary outline-none`}
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 font-bold text-primary text-sm">{p.mode}</span>
                       </div>
                     </div>
                   )}

@@ -2,8 +2,8 @@
 import { INITIAL_KNOWLEDGE } from "../data/initialKnowledge";
 import { AppSettings } from "../types";
 
-const DB_NAME = 'Gusrepart_Master_DB';
-const DB_VERSION = 2;
+const DB_NAME = 'Gusrepart_Master_DB'; 
+const DB_VERSION = 2; 
 const SESSION_STORE = 'session';
 const HISTORY_STORE = 'history';
 const KNOWLEDGE_STORE = 'knowledge';
@@ -12,18 +12,18 @@ const SETTINGS_KEY = 'GUSREPART_SETTINGS';
 
 // IndexedDB Helper
 const performOperation = (
-  storeName: string,
-  mode: IDBTransactionMode,
+  storeName: string, 
+  mode: IDBTransactionMode, 
   callback: (store: IDBObjectStore) => IDBRequest | void
 ): Promise<any> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => {
-      console.error("DB Error", request.error);
-      reject(request.error);
+        console.error("DB Error", request.error);
+        reject(request.error);
     };
-
+    
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(SESSION_STORE)) db.createObjectStore(SESSION_STORE);
@@ -36,12 +36,12 @@ const performOperation = (
       try {
         const transaction = db.transaction(storeName, mode);
         const store = transaction.objectStore(storeName);
-
+        
         let req: IDBRequest | void;
-        try { req = callback(store); } catch (err) { db.close(); reject(err); return; }
+        try { req = callback(store); } catch(err) { db.close(); reject(err); return; }
 
         transaction.oncomplete = () => {
-          db.close();
+          db.close(); 
           if (req && 'result' in req) resolve(req.result);
           else resolve(undefined);
         };
@@ -54,10 +54,20 @@ const performOperation = (
 // --- SETTINGS SYSTEM ---
 export const getSettings = (): AppSettings => {
   const saved = localStorage.getItem(SETTINGS_KEY);
-  if (saved) return JSON.parse(saved);
+  if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+          geminiApiKey: parsed.geminiApiKey || '',
+          geminiModel: parsed.geminiModel || 'gemini-3-flash-preview',
+          ollamaUrl: parsed.ollamaUrl || 'http://localhost:11434',
+          ollamaTextModel: parsed.ollamaTextModel || 'llama3',
+          ollamaVisionModel: parsed.ollamaVisionModel || 'llava'
+      };
+  }
   return {
-    aiProvider: 'gemini',
-    ollamaUrl: 'http://127.0.0.1:11434', // CAMBIO: Usar IP directa es más seguro en Windows
+    geminiApiKey: '', 
+    geminiModel: 'gemini-3-flash-preview',
+    ollamaUrl: 'http://localhost:11434',
     ollamaTextModel: 'llama3',
     ollamaVisionModel: 'llava'
   };
@@ -70,20 +80,20 @@ export const saveSettings = (settings: AppSettings) => {
 // --- INITIALIZATION & SEEDING ---
 
 export const initializeDatabase = async () => {
-  try {
-    const existing = await getAllKnowledge();
-    if (existing.length === 0) {
-      console.log("Base de datos vacía. Sembrando datos iniciales...");
-      for (const entry of INITIAL_KNOWLEDGE) {
-        await addKnowledgeEntry(entry);
-      }
-      return true;
+    try {
+        const existing = await getAllKnowledge();
+        if (existing.length === 0) {
+            console.log("Base de datos vacía. Sembrando datos iniciales...");
+            for (const entry of INITIAL_KNOWLEDGE) {
+                await addKnowledgeEntry(entry);
+            }
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error("Error inicializando DB:", e);
+        return false;
     }
-    return false;
-  } catch (e) {
-    console.error("Error inicializando DB:", e);
-    return false;
-  }
 };
 
 // --- SESSION & HISTORY ---
@@ -102,7 +112,7 @@ export const saveSessionData = async (key: string, data: any) => {
   }
 };
 
-export const getSessionData = async (key: string): Promise<any> => {
+export const QK = async (key: string): Promise<any> => {
   if (key === 'pcbImages') {
     try {
       return await performOperation(SESSION_STORE, 'readonly', (store) => store.get(key));
@@ -112,6 +122,11 @@ export const getSessionData = async (key: string): Promise<any> => {
     return item ? JSON.parse(item) : null;
   }
 };
+
+// Fix export name mismatch
+export const getSessionData = async (key: string): Promise<any> => {
+    return QK(key);
+}
 
 export const clearSessionStorage = async () => {
   Object.keys(localStorage).forEach(k => {
@@ -129,12 +144,13 @@ export const saveRepairToHistory = async (repair: any): Promise<number> => {
   return timestamp;
 };
 
-export const getAllRepairs = async (): Promise<any[]> => {
+export const QH = async (): Promise<any[]> => {
   try {
     const result = await performOperation(HISTORY_STORE, 'readonly', (store) => store.getAll());
     return result || [];
   } catch (e) { return []; }
 };
+export const getAllRepairs = async (): Promise<any[]> => QH();
 
 export const deleteRepairFromHistory = async (timestamp: number): Promise<boolean> => {
   try {
@@ -148,7 +164,7 @@ export const findSimilarRepairs = async (model: string) => {
     const repairs = await getAllRepairs();
     if (!model) return [];
     const search = model.toLowerCase();
-    return repairs.filter((h: any) =>
+    return repairs.filter((h: any) => 
       h.pcbResult?.model?.toLowerCase().includes(search) ||
       h.pcbResult?.boardNumber?.toLowerCase().includes(search)
     );
@@ -158,37 +174,37 @@ export const findSimilarRepairs = async (model: string) => {
 // --- KNOWLEDGE BASE SYSTEM ---
 
 export const addKnowledgeEntry = async (entry: any) => {
-  return performOperation(KNOWLEDGE_STORE, 'readwrite', (store) => store.put(entry));
+    return performOperation(KNOWLEDGE_STORE, 'readwrite', (store) => store.put(entry));
 };
 
 export const getAllKnowledge = async (): Promise<any[]> => {
-  try {
-    const result = await performOperation(KNOWLEDGE_STORE, 'readonly', (store) => store.getAll());
-    return result || [];
-  } catch (e) { return []; }
+    try {
+        const result = await performOperation(KNOWLEDGE_STORE, 'readonly', (store) => store.getAll());
+        return result || [];
+    } catch (e) { return []; }
 };
 
 export const searchKnowledgeContext = async (query: string): Promise<string> => {
-  if (!query) return "";
-  try {
-    const all = await getAllKnowledge();
-    const searchTerms = query.toLowerCase().split(' ');
+    if (!query) return "";
+    try {
+        const all = await getAllKnowledge();
+        const searchTerms = query.toLowerCase().split(' ');
+        
+        const relevant = all.filter(entry => {
+            const text = (entry.title + " " + entry.tags.join(" ") + " " + entry.content).toLowerCase();
+            return searchTerms.some(term => term.length > 2 && text.includes(term));
+        });
 
-    const relevant = all.filter(entry => {
-      const text = (entry.title + " " + entry.tags.join(" ") + " " + entry.content).toLowerCase();
-      return searchTerms.some(term => term.length > 2 && text.includes(term));
-    });
+        if (relevant.length === 0) return "";
 
-    if (relevant.length === 0) return "";
-
-    return `\n[BASE DE CONOCIMIENTOS EXPERTOS (APRENDIDO DEL USUARIO)]:\n${relevant.map(r => `- Título: ${r.title}\n  Nota: ${r.content}\n  Fuente: ${r.source}`).join('\n')}\n(Usa esta información PRIORITARIAMENTE para el diagnóstico).`;
-  } catch (e) {
-    return "";
-  }
+        return `\n[BASE DE CONOCIMIENTOS EXPERTOS (APRENDIDO DEL USUARIO)]:\n${relevant.map(r => `- Título: ${r.title}\n  Nota: ${r.content}\n  Fuente: ${r.source}`).join('\n')}\n(Usa esta información PRIORITARIAMENTE para el diagnóstico).`;
+    } catch (e) {
+        return "";
+    }
 };
 
 export const deleteKnowledgeEntry = async (id: string) => {
-  return performOperation(KNOWLEDGE_STORE, 'readwrite', (store) => store.delete(id));
+    return performOperation(KNOWLEDGE_STORE, 'readwrite', (store) => store.delete(id));
 };
 
 // --- BACKUP SYSTEM ---
@@ -204,23 +220,23 @@ export const importDatabase = async (jsonContent: string): Promise<boolean> => {
     const data = JSON.parse(jsonContent);
     const historyData = Array.isArray(data) ? data : data.history || [];
     const knowledgeData = data.knowledge || [];
-
+    
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onsuccess = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        const transaction = db.transaction([HISTORY_STORE, KNOWLEDGE_STORE], 'readwrite');
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onsuccess = (event) => {
+            const db = (event.target as IDBOpenDBRequest).result;
+            const transaction = db.transaction([HISTORY_STORE, KNOWLEDGE_STORE], 'readwrite');
+            
+            const historyStore = transaction.objectStore(HISTORY_STORE);
+            historyData.forEach((item: any) => { if (item.timestamp) historyStore.put(item); });
 
-        const historyStore = transaction.objectStore(HISTORY_STORE);
-        historyData.forEach((item: any) => { if (item.timestamp) historyStore.put(item); });
+            const knowledgeStore = transaction.objectStore(KNOWLEDGE_STORE);
+            knowledgeData.forEach((item: any) => { if (item.id) knowledgeStore.put(item); });
 
-        const knowledgeStore = transaction.objectStore(KNOWLEDGE_STORE);
-        knowledgeData.forEach((item: any) => { if (item.id) knowledgeStore.put(item); });
-
-        transaction.oncomplete = () => { db.close(); resolve(true); };
-        transaction.onerror = () => { db.close(); reject(false); };
-      };
-      request.onerror = () => reject(false);
+            transaction.oncomplete = () => { db.close(); resolve(true); };
+            transaction.onerror = () => { db.close(); reject(false); };
+        };
+        request.onerror = () => reject(false);
     });
   } catch (e) {
     console.error("Import failed", e);

@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
+import { getSettings } from '../services/storage';
 
 interface LiveAssistantProps {
   onClose: () => void;
@@ -16,8 +17,12 @@ const LiveAssistant: React.FC<LiveAssistantProps> = ({ onClose }) => {
   const sessionRef = useRef<any>(null);
 
   const startSession = async () => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-    
+    const settings = getSettings();
+    const apiKey = settings.geminiApiKey ||
+      (import.meta as any).env?.VITE_API_KEY ||
+      (process?.env as any)?.GEMINI_API_KEY || '';
+    const ai = new GoogleGenAI({ apiKey });
+
     audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     outputNodeRef.current = audioContextRef.current.createGain();
     outputNodeRef.current.connect(audioContextRef.current.destination);
@@ -50,10 +55,10 @@ const LiveAssistant: React.FC<LiveAssistantProps> = ({ onClose }) => {
         },
         onmessage: async (msg: LiveServerMessage) => {
           if (msg.serverContent?.outputTranscription) {
-             setTranscription(prev => [...prev.slice(-4), "AI: " + msg.serverContent!.outputTranscription!.text]);
+            setTranscription(prev => [...prev.slice(-4), "AI: " + msg.serverContent!.outputTranscription!.text]);
           }
           if (msg.serverContent?.inputTranscription) {
-             setTranscription(prev => [...prev.slice(-4), "Tú: " + msg.serverContent!.inputTranscription!.text]);
+            setTranscription(prev => [...prev.slice(-4), "Tú: " + msg.serverContent!.inputTranscription!.text]);
           }
 
           const base64Audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
@@ -99,10 +104,10 @@ const LiveAssistant: React.FC<LiveAssistantProps> = ({ onClose }) => {
             <span className="material-symbols-outlined text-6xl text-primary">mic</span>
           </div>
           {isActive && (
-             <div className="absolute -inset-4 border border-primary/20 rounded-full animate-ping"></div>
+            <div className="absolute -inset-4 border border-primary/20 rounded-full animate-ping"></div>
           )}
         </div>
-        
+
         <div className="text-center">
           <h2 className="text-2xl font-bold">Asistente de Voz AI</h2>
           <p className="text-text-secondary mt-1">{isActive ? 'Escuchando...' : 'Conectando...'}</p>
@@ -117,7 +122,7 @@ const LiveAssistant: React.FC<LiveAssistantProps> = ({ onClose }) => {
           {transcription.length === 0 && <p className="text-text-secondary italic text-center py-10">Diga algo como "¿Cómo identifico el pin 1 de un IC?"</p>}
         </div>
 
-        <button 
+        <button
           onClick={onClose}
           className="w-full py-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl font-bold transition-colors border border-red-500/20"
         >

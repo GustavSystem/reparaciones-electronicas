@@ -59,11 +59,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onLoadRepair, onNewRepair }) => {
           </div>
         </header>
 
+        {/* ALERTA DE SEGURIDAD - NUEVA */}
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex items-start gap-4 animate-in fade-in slide-in-from-top-2 shadow-lg shadow-yellow-900/10">
+            <div className="p-2 bg-yellow-500/20 rounded-full text-yellow-500 shrink-0">
+                <span className="material-symbols-outlined">warning</span>
+            </div>
+            <div>
+                <h4 className="text-yellow-500 font-bold text-sm uppercase tracking-wide">Recordatorio de Seguridad ESD</h4>
+                <p className="text-text-secondary text-sm mt-1">
+                    Antes de comenzar cualquier manipulación, asegúrate de tener tu <b>muñequera antiestática</b> conectada y la zona de trabajo (EPA) despejada. Desconecta toda fuente de energía del equipo antes de medir componentes.
+                </p>
+            </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           <div className="lg:col-span-2 flex flex-col gap-8">
             
-            {/* ACCIONES RÁPIDAS (Ahora incluye Nueva Reparación) */}
+            {/* ACCIONES RÁPIDAS */}
             <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <button 
                 onClick={onNewRepair}

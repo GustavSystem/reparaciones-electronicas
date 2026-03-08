@@ -6,19 +6,20 @@ interface HeaderProps {
   onSave?: () => void;
   isSaving?: boolean;
   isSuccess?: boolean;
+  onToggleLive?: () => void;
+  isLiveActive?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onSave, isSaving, isSuccess }) => {
+const Header: React.FC<HeaderProps> = ({ onSave, isSaving, isSuccess, onToggleLive, isLiveActive }) => {
   const location = useLocation();
   const path = location.pathname;
   
-  // Ocultar el botón de guardado GLOBAL en pantallas donde no aplica (Base de conocimientos, Base de datos)
-  // El usuario se confunde pensando que es para guardar la entrada de conocimiento.
-  const showSaveButton = onSave && !['/knowledge', '/database', '/component'].includes(path);
+  const showSaveButton = onSave && !['/knowledge', '/database', '/component', '/safety'].includes(path);
   
   const getTitle = () => {
     switch(path) {
       case '/': return 'Panel de Control';
+      case '/safety': return 'Protocolo de Seguridad';
       case '/pcb-id': return 'Fase 1: Identificación Visual';
       case '/boardview': return 'Fase 2: Mapeo Lógico';
       case '/measure': return 'Fase 3: Medición Guiada';
@@ -38,6 +39,17 @@ const Header: React.FC<HeaderProps> = ({ onSave, isSaving, isSuccess }) => {
       </div>
       
       <div className="flex items-center gap-6">
+        
+        {/* Live Assistant Toggle */}
+        <button 
+            onClick={onToggleLive}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${isLiveActive ? 'bg-red-500/20 border-red-500 text-red-400 animate-pulse' : 'bg-surface-dark border-border-dark text-text-secondary hover:text-white'}`}
+            title="Asistente de Voz (Gemini Live)"
+        >
+            <span className="material-symbols-outlined text-[20px]">{isLiveActive ? 'mic' : 'mic_off'}</span>
+            <span className="text-xs font-bold hidden md:inline">{isLiveActive ? 'Escuchando...' : 'Voz'}</span>
+        </button>
+
         {showSaveButton && (
           <button 
             onClick={onSave}
@@ -56,14 +68,11 @@ const Header: React.FC<HeaderProps> = ({ onSave, isSaving, isSuccess }) => {
         )}
         
         <div className="flex items-center gap-4">
-          <button className="text-text-secondary hover:text-white transition-colors relative">
-            <span className="material-symbols-outlined">notifications</span>
-            <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-surface-dark"></span>
-          </button>
           <div 
-            className="h-8 w-8 bg-center bg-no-repeat bg-cover rounded-full border border-border-dark cursor-pointer" 
-            style={{backgroundImage: 'url("https://picsum.photos/id/64/100/100")'}}
-          ></div>
+            className="h-8 w-8 bg-center bg-no-repeat bg-cover rounded-full border border-border-dark cursor-pointer bg-gray-700" 
+          >
+             <span className="material-symbols-outlined text-white w-full h-full flex items-center justify-center text-sm">person</span>
+          </div>
         </div>
       </div>
     </header>

@@ -1,26 +1,28 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { analyzePCBImage, searchSchematics, getFunctionalAnalysis, enhancePCBImage } from '../services/gemini';
+import { analyzePCBImage, searchSchematics, getFunctionalAnalysis } from '../services/gemini';
 import { findSimilarRepairs } from '../services/storage';
 import { PCBAnalysisResult } from '../types';
 
 interface PCBIdentificationProps {
   persistedImages: string[];
   persistedResult: PCBAnalysisResult | null;
-  onUpdate: (images: string[], result?: PCBAnalysisResult | null, schematics?: any, functional?: string) => void;
+  persistedReceptionData?: { model: string, serial: string, symptoms: string };
+  onUpdate: (images: string[], result?: PCBAnalysisResult | null, schematics?: any, functional?: string, receptionData?: any) => void;
 }
 
-const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, persistedResult, onUpdate }) => {
+const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, persistedResult, persistedReceptionData, onUpdate }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   // Datos de recepción manuales (Input del técnico)
   const [receptionData, setReceptionData] = useState({
-      model: '',
-      serial: '',
-      symptoms: ''
+      model: persistedReceptionData?.model || '',
+      serial: persistedReceptionData?.serial || '',
+      symptoms: persistedReceptionData?.symptoms || ''
   });
   
   // ESTADO INICIAL
@@ -46,17 +48,17 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
     if (JSON.stringify(targetImages) !== JSON.stringify(images)) {
       setImages(targetImages);
     }
-    // Sincronizar RESULT y DATOS DE RECEPCIÓN cuando carga una reparación guardada
     if (persistedResult && JSON.stringify(persistedResult) !== JSON.stringify(result)) {
       setResult(persistedResult);
-      // Pre-rellenar los inputs con lo que ya sabemos de la reparación guardada
-      setReceptionData(prev => ({
-          ...prev,
-          model: persistedResult.model || prev.model,
-          serial: persistedResult.boardNumber || prev.serial, // Asumimos boardNumber como serial si no hay serial
-      }));
     }
-  }, [persistedImages, persistedResult]);
+    if (persistedReceptionData) {
+        if(persistedReceptionData.model !== receptionData.model || 
+           persistedReceptionData.serial !== receptionData.serial || 
+           persistedReceptionData.symptoms !== receptionData.symptoms) {
+             setReceptionData(persistedReceptionData);
+        }
+    }
+  }, [persistedImages, persistedResult, persistedReceptionData]);
 
   useEffect(() => {
     if (result?.model) {
@@ -65,6 +67,12 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
       setSimilarCases([]);
     }
   }, [result?.model]);
+
+  const handleInputChange = (field: string, value: string) => {
+      const newData = { ...receptionData, [field]: value };
+      setReceptionData(newData);
+      onUpdate(images, result, undefined, undefined, newData);
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -76,27 +84,50 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
       const newImages = [...images];
       newImages[activeSlot] = base64;
       setImages(newImages);
-      onUpdate(newImages, result || undefined);
+      
+      onUpdate(newImages, result || undefined, undefined, undefined, receptionData);
       setActiveSlot(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     };
     reader.readAsDataURL(file);
   };
 
+  const processImage = (base64: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.filter = 'contrast(1.4) brightness(1.1) saturate(1.2) sharpen(1px)';
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.9));
+        } else {
+          resolve(base64);
+        }
+      };
+      img.onerror = () => resolve(base64);
+      img.src = base64;
+    });
+  };
+
   const handleEnhance = async (e: React.MouseEvent, slot: number) => {
     e.stopPropagation();
-    if (!images[slot] || isEnhancing !== null) return;
+    if (!images[slot]) return;
+    
     setIsEnhancing(slot);
     try {
-      const enhanced = await enhancePCBImage(images[slot].split(',')[1]);
-      const newImages = [...images];
-      newImages[slot] = enhanced;
-      setImages(newImages);
-      onUpdate(newImages, result || undefined);
+        const enhancedBase64 = await processImage(images[slot]);
+        const newImages = [...images];
+        newImages[slot] = enhancedBase64; 
+        setImages(newImages);
+        onUpdate(newImages, result || undefined, undefined, undefined, receptionData);
     } catch (err) {
-      alert("Error al mejorar imagen");
+        console.error("Error enhancing image", err);
     } finally {
-      setIsEnhancing(null);
+        setIsEnhancing(null);
     }
   };
 
@@ -105,10 +136,9 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
     const newImages = [...images];
     newImages[slot] = "";
     setImages(newImages);
-    onUpdate(newImages, result || undefined);
+    onUpdate(newImages, result || undefined, undefined, undefined, receptionData);
   };
 
-  // FLUJO COMPLETO: Análisis Visual -> Búsqueda Datos -> Análisis Funcional
   const runVisualAnalysis = async () => {
     const activeImages = images.filter(img => img && img.length > 0);
     if (activeImages.length === 0) {
@@ -117,18 +147,17 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
     }
 
     setIsAnalyzing(true);
-    setStatus("Integrando síntomas y analizando placa...");
+    setErrorMsg(null);
+    setStatus("Analizando placa visualmente...");
     
     try {
-      const pureBase64s = activeImages.map(img => img.split(',')[1]);
+      const pureBase64s = activeImages.map(img => img); // analyzePCBImage se encarga de limpiar el base64 si es necesario
       
-      // PREPARAR CONTEXTO:
-      // Si el usuario no ha escrito nada nuevo, pero ya tenemos un resultado guardado, usamos ese resultado como contexto.
       const contextModel = receptionData.model || result?.model || "";
       const contextSerial = receptionData.serial || result?.boardNumber || "";
       const contextSymptoms = receptionData.symptoms || "";
 
-      // 1. ANÁLISIS VISUAL CON CONTEXTO INTELIGENTE
+      // 1. ANÁLISIS VISUAL
       const analysis = await analyzePCBImage(pureBase64s, {
           model: contextModel,
           serial: contextSerial,
@@ -137,9 +166,9 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
       
       setResult(analysis);
 
-      // 2. AUTOMATIZACIÓN DE BÚSQUEDA Y FUNCIONALIDAD
+      // 2. DATOS COMPLEMENTARIOS
       if (analysis.model || analysis.boardNumber) {
-          setStatus("Localizando esquemas y generando análisis funcional...");
+          setStatus("Buscando esquemas y datos...");
           const query = `${analysis.manufacturer || ''} ${analysis.model || ''} ${analysis.boardNumber || ''}`;
 
           const [schematics, functional] = await Promise.all([
@@ -147,16 +176,15 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
             getFunctionalAnalysis(analysis.identifiedComponents || [], analysis.boardNumber || analysis.model || '')
           ]);
           
-          // Guardamos todo de una vez
-          onUpdate(images, analysis, schematics, functional);
+          onUpdate(images, analysis, schematics, functional, receptionData);
       } else {
-          // Si no detectó modelo, guardamos solo lo visual
-          onUpdate(images, analysis);
+          onUpdate(images, analysis, undefined, undefined, receptionData);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setStatus("Hubo un error en el proceso de análisis.");
+      setErrorMsg(`Error de IA: ${error.message}. Verifica API Key y modelo.`);
+      setStatus("Falló el análisis.");
     } finally {
       setIsAnalyzing(false);
       setStatus("");
@@ -171,12 +199,9 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
       confidence: 1, identifiedComponents: [], detectedAnomalies: [] 
     };
     setResult(newResult);
-    // Nota: Al editar manualmente no relanzamos la búsqueda automática para no sobreescribir,
-    // se asume que la edición es cosmética o corrección menor.
-    onUpdate(images, newResult);
+    onUpdate(images, newResult, undefined, undefined, receptionData);
   };
 
-  // Handlers UI
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     setScale(prev => Math.min(Math.max(1, prev + (e.deltaY > 0 ? -0.2 : 0.2)), 5));
@@ -231,7 +256,7 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
                       <label className="text-xs text-text-secondary uppercase font-bold mb-1 block">Modelo del Equipo</label>
                       <input 
                         value={receptionData.model}
-                        onChange={(e) => setReceptionData({...receptionData, model: e.target.value})}
+                        onChange={(e) => handleInputChange('model', e.target.value)}
                         placeholder="Ej: HP Pavilion 15-cw" 
                         className="w-full bg-black/30 border border-border-dark rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
                       />
@@ -240,7 +265,7 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
                       <label className="text-xs text-text-secondary uppercase font-bold mb-1 block">Número de Serie / ID</label>
                       <input 
                         value={receptionData.serial}
-                        onChange={(e) => setReceptionData({...receptionData, serial: e.target.value})}
+                        onChange={(e) => handleInputChange('serial', e.target.value)}
                         placeholder="Ej: 5CD84..." 
                         className="w-full bg-black/30 border border-border-dark rounded-xl px-4 py-3 text-white focus:border-primary outline-none font-mono"
                       />
@@ -249,7 +274,7 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
                       <label className="text-xs text-text-secondary uppercase font-bold mb-1 block">Síntomas de Avería / Notas del Cliente</label>
                       <textarea 
                         value={receptionData.symptoms}
-                        onChange={(e) => setReceptionData({...receptionData, symptoms: e.target.value})}
+                        onChange={(e) => handleInputChange('symptoms', e.target.value)}
                         placeholder="Ej: No enciende, LED de carga parpadea, se mojó hace una semana..." 
                         className="w-full bg-black/30 border border-border-dark rounded-xl px-4 py-3 text-white focus:border-primary outline-none h-20 resize-none"
                       />
@@ -264,12 +289,20 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
               <div key={slot} className={`relative flex items-center justify-center rounded-2xl border-2 border-dashed ${images[slot] ? 'border-primary' : 'border-border-dark'} bg-[#111722] hover:bg-[#161e2c] transition-all group overflow-hidden shadow-lg`}>
                 {images[slot] ? (
                   <>
-                    <img src={images[slot]} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                    <img 
+                        src={images[slot]} 
+                        className="absolute inset-0 w-full h-full object-cover transition-all duration-500" 
+                    />
+                    
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                       <button onClick={() => setZoomImage(images[slot])} className="p-4 bg-primary text-white rounded-full shadow-2xl hover:scale-110 transition-transform">
                         <span className="material-symbols-outlined text-3xl">zoom_in</span>
                       </button>
-                      <button onClick={(e) => handleEnhance(e, slot)} className={`p-3 bg-surface-dark rounded-xl text-white border border-white/10 ${isEnhancing === slot ? 'animate-spin' : ''}`}>
+                      <button 
+                        onClick={(e) => handleEnhance(e, slot)} 
+                        className={`p-3 bg-surface-dark rounded-xl text-white border border-white/10 ${isEnhancing === slot ? 'animate-spin' : ''}`}
+                        title="Mejorar nitidez e iluminación para la IA"
+                      >
                         <span className="material-symbols-outlined">auto_fix</span>
                       </button>
                       <button onClick={(e) => handleRemoveImage(e, slot)} className="p-3 bg-red-500/20 text-red-500 rounded-xl border border-red-500/30">
@@ -289,8 +322,9 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
             ))}
           </div>
 
-          <div className="mt-8 flex flex-col md:flex-row items-center justify-center gap-4">
-             {status && <p className="text-primary text-sm font-mono animate-pulse w-full text-center md:hidden">{status}</p>}
+          <div className="mt-8 flex flex-col items-center justify-center gap-4">
+             {status && <p className="text-primary text-sm font-mono animate-pulse w-full text-center">{status}</p>}
+             {errorMsg && <p className="text-red-400 text-sm font-bold w-full text-center">{errorMsg}</p>}
              
              <button 
                onClick={runVisualAnalysis} 
@@ -380,7 +414,6 @@ const PCBIdentification: React.FC<PCBIdentificationProps> = ({ persistedImages, 
             </div>
 
             <div className="space-y-4 animate-in fade-in slide-in-from-right-2">
-              {/* Botón de confirmación eliminado. La búsqueda es automática. */}
               
               {result && (
                  <div className="pt-2 border-t border-white/5">

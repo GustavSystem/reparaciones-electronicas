@@ -8,10 +8,11 @@ export enum RepairStep {
   Component = 'component'
 }
 
-export type AIProvider = 'gemini' | 'ollama';
-
+// Configuración limpia solo para Gemini
 export interface AppSettings {
-  aiProvider: AIProvider;
+  geminiApiKey: string;
+  geminiModel: string; // Ej: gemini-3-flash-preview
+  // Ollama support
   ollamaUrl: string;
   ollamaTextModel: string;
   ollamaVisionModel: string;
